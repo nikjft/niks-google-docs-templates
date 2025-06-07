@@ -1,0 +1,31 @@
+{
+  "timeZone": "America/New_York",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.storage"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Drive Content Inserter",
+      "logoUrl": "https://cdn-icons-png.flaticon.com/128/8591/8591551.png",
+      "layoutProperties": {
+        "primaryColor": "#2196F3",
+        "secondaryColor": "#1976D2"
+      },
+      "homepageTrigger": {
+        "runFunction": "onHomepage"
+      }
+    },
+    "docs": {
+      "onFileScopeGrantedTrigger": {
+        "runFunction": "onDocsHomepage"
+      }
+    }
+  }
+}
