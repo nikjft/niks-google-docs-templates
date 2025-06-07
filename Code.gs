@@ -1,130 +1,54 @@
 /**
  * @OnlyCurrentDoc
- *
- * The above comment directs App Script to limit the scope of file
- * access for this add-on to only the current document.
  */
 
+// --- Main Add-on Entry Point ---
+
 /**
- * Callback for rendering the add-on's homepage. This is the main entry point.
- * It checks for configuration and routes the user to the correct card.
+ * Runs when the add-on is opened from the sidebar icon.
  * @param {Object} e The event object.
  * @return {CardService.Card} The card to show to the user.
  */
 function onHomepage(e) {
-  console.log('onHomepage trigger fired.');
   const userProps = PropertiesService.getUserProperties();
   const folderId = userProps.getProperty('rootFolderId');
-  console.log(`Retrieved rootFolderId: ${folderId}`);
 
   if (folderId) {
     try {
-      // Verify the saved folder exists and is accessible before proceeding.
-      DriveApp.getFolderById(folderId);
-      console.log(`Successfully accessed folderId: ${folderId}. Building browser card.`);
-      return createBrowserCard(folderId, []);
+      DriveApp.getFolderById(folderId); // Validate that the folder is still accessible.
+      return createBrowserCard(folderId, [], {}); // Start with no file selected
     } catch (error) {
-      // The saved folder ID is no longer valid or accessible.
-      console.error(`Failed to access saved folderId: ${folderId}. Error: ${error.message}`, error.stack);
       userProps.deleteProperty('rootFolderId');
-      return createErrorCard(error); // Display a detailed error card.
+      return createErrorCard(error, 'The previously saved folder could not be accessed.');
     }
   }
-  // No folder has been configured yet. Show the initial setup card.
-  console.log('No rootFolderId found. Building configuration card.');
-  return createConfigurationCard(false);
+  return createConfigurationCard();
 }
 
 /**
- * Callback for the Docs-specific homepage trigger. This is good practice
- * to have when the manifest specifies it.
+ * Callback for the Docs-specific homepage trigger.
  * @param {Object} e The event object.
  * @return {CardService.Card} The card to show to the user.
  */
 function onDocsHomepage(e) {
-    console.log('onDocsHomepage trigger fired.');
     return onHomepage(e);
 }
 
-/**
- * Creates a card that displays a detailed error message for debugging.
- * @param {Error} error The error object caught by a try-catch block.
- * @return {CardService.Card} The error card.
- */
-function createErrorCard(error) {
-  console.log(`Creating error card for error: ${error.message}`);
-  const card = CardService.newCardBuilder();
-  card.setHeader(CardService.newCardHeader()
-    .setTitle('An Unexpected Error Occurred')
-    .setSubtitle('Please share this information for troubleshooting.')
-    .setImageUrl('https://ssl.gstatic.com/docs/script/images/icons/error_red_64dp.png'));
 
-  const errorSection = CardService.newCardSection()
-    .setHeader('Error Details');
-
-  // Add the main error message
-  errorSection.addWidget(CardService.newDecoratedText()
-    .setTopLabel('Message')
-    .setText(error.message)
-    .setWrapText(true));
-
-  // Add the stack trace for more context
-  if (error.stack) {
-    errorSection.addWidget(CardService.newDecoratedText()
-      .setTopLabel('Stack Trace')
-      .setText(error.stack)
-      .setWrapText(true));
-  }
-
-  // Add a button to reset the configuration and try again.
-  const resetAction = CardService.newAction().setFunctionName('handleResetAction');
-  errorSection.addWidget(CardService.newTextButton()
-    .setText('Reset and Start Over')
-    .setOnClickAction(resetAction));
-
-  card.addSection(errorSection);
-  return card.build();
-}
-
+// --- Card Creation Functions ---
 
 /**
- * Creates a card that tells the user they need to authorize the add-on.
- * @return {CardService.Card} The authorization card.
+ * Creates the initial configuration card prompting the user to set a folder.
+ * @return {CardService.Card}
  */
-function createAuthorizationCard() {
-  const card = CardService.newCardBuilder();
-  card.setHeader(CardService.newCardHeader().setTitle('Authorization Required'));
-  const section = CardService.newCardSection();
-  section.addWidget(CardService.newDecoratedText()
-    .setText('This add-on requires your permission to access Google Drive. Please reload the add-on and grant access when prompted. If the problem persists, you may need to re-install the add-on from the Google Workspace Marketplace.')
-    .setWrapText(true)
-    .setTopLabel("Permission Error"));
-  card.addSection(section);
-  return card.build();
-}
-
-
-/**
- * Creates a card that prompts the user to configure a root folder.
- * This is shown on first run or when the saved folder is invalid.
- * @param {boolean} showError - If true, displays a generic error message.
- * @return {CardService.Card} The configuration card.
- */
-function createConfigurationCard(showError) {
+function createConfigurationCard() {
   const card = CardService.newCardBuilder();
   card.setHeader(CardService.newCardHeader().setTitle('Setup Required'));
   const section = CardService.newCardSection();
 
-  if (showError) {
-    section.addWidget(CardService.newDecoratedText()
-      .setText('The previously saved folder could not be accessed. It may have been deleted, or you may no longer have permission to view it. Please configure a new folder.')
-      .setWrapText(true)
-      .setTopLabel("Error"));
-  } else {
-    section.addWidget(CardService.newDecoratedText()
-      .setText('To get started, please set a root folder for the content inserter. You can get the folder URL or ID from its page in Google Drive.')
-      .setWrapText(true));
-  }
+  section.addWidget(CardService.newDecoratedText()
+    .setText('To get started, please set a root folder for the content inserter.')
+    .setWrapText(true));
 
   section.addWidget(CardService.newTextInput()
     .setFieldName('folderUrl')
@@ -142,12 +66,13 @@ function createConfigurationCard(showError) {
 }
 
 /**
- * Creates the main card for browsing files and folders.
+ * Creates the main card for browsing files and folders with the new selection model.
  * @param {string} folderId - The ID of the folder to display.
  * @param {Array<Object>} path - An array of {id, name} objects representing the navigation path.
+ * @param {Object} selection - An object like {id, name, mimeType} representing the selected file.
  * @return {CardService.Card} The browser card.
  */
-function createBrowserCard(folderId, path) {
+function createBrowserCard(folderId, path, selection) {
   const card = CardService.newCardBuilder();
   card.setHeader(CardService.newCardHeader().setTitle('Drive Content Inserter'));
 
@@ -158,7 +83,8 @@ function createBrowserCard(folderId, path) {
 
   try {
     const folder = DriveApp.getFolderById(folderId);
-
+    const folderContents = getFolderContents(folderId);
+    
     // --- Breadcrumb Section ---
     const breadcrumbSection = CardService.newCardSection().setHeader("Path");
     const breadcrumbSet = CardService.newButtonSet();
@@ -166,75 +92,60 @@ function createBrowserCard(folderId, path) {
 
     if (rootId) {
         const rootFolder = DriveApp.getFolderById(rootId);
-        // Root folder button
         breadcrumbSet.addButton(CardService.newTextButton()
           .setText(rootFolder.getName())
-          .setTextButtonStyle(CardService.TextButtonStyle.TEXT) // Makes it look more like a link
-          .setOnClickAction(CardService.newAction()
-            .setFunctionName('handleNavigation')
-            .setParameters({
-              folderId: rootId,
-              path: JSON.stringify([])
-            })));
+          .setTextButtonStyle(CardService.TextButtonStyle.TEXT)
+          .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: rootId, path: '[]', selection: '{}' })));
 
-        // Path component buttons
         path.forEach((p, index) => {
           breadcrumbSet.addButton(CardService.newTextButton()
             .setText(p.name)
             .setTextButtonStyle(CardService.TextButtonStyle.TEXT)
-            .setOnClickAction(CardService.newAction()
-              .setFunctionName('handleNavigation')
-              .setParameters({
-                folderId: p.id,
-                path: JSON.stringify(path.slice(0, index + 1))
-              })));
+            .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: p.id, path: JSON.stringify(path.slice(0, index)), selection: '{}' })));
         });
-
         breadcrumbSection.addWidget(breadcrumbSet);
-        // Display current folder name for context
-        breadcrumbSection.addWidget(CardService.newDecoratedText().setText(folder.getName()).setTopLabel("Current Folder"));
-        card.addSection(breadcrumbSection);
     }
+    breadcrumbSection.addWidget(CardService.newDecoratedText().setText(folder.getName()).setTopLabel("Current Folder"));
+    card.addSection(breadcrumbSection);
 
 
     // --- Content Section ---
     const contentSection = CardService.newCardSection().setHeader("Contents");
     let hasContent = false;
 
-    // --- List Subfolders ---
-    const subfolders = folder.getFolders();
-    while (subfolders.hasNext()) {
-      hasContent = true;
-      const subfolder = subfolders.next();
-      const newPathForSubfolder = [...path, {
-        id: folder.getId(),
-        name: folder.getName()
-      }];
-
-      const navAction = CardService.newAction()
-        .setFunctionName('handleNavigation')
-        .setParameters({
-          folderId: subfolder.getId(),
-          path: JSON.stringify(newPathForSubfolder)
-        });
-
-      contentSection.addWidget(CardService.newDecoratedText()
-        .setText(subfolder.getName())
-        .setWrapText(true)
-        .setIcon(CardService.Icon.FOLDER)
-        .setOnClickAction(navAction));
-    }
-
-    // --- List Files ---
-    const files = folder.getFiles();
-    while (files.hasNext()) {
-      const file = files.next();
-      const fileWidget = createFileWidget(file, folderId);
-      if (fileWidget) {
+    // Subfolders
+    folderContents.folders.forEach(subfolder => {
         hasContent = true;
-        contentSection.addWidget(fileWidget);
+        const newPathForSubfolder = [...path, { id: folderId, name: folder.getName() }];
+        contentSection.addWidget(CardService.newDecoratedText()
+            .setText(`📁 ${subfolder.name}`) // Add folder emoji
+            .setWrapText(true)
+            .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: subfolder.id, path: JSON.stringify(newPathForSubfolder), selection: '{}' })));
+    });
+    
+    // Files
+    folderContents.files.forEach(file => {
+      hasContent = true;
+      const isSelected = selection && selection.id === file.id;
+
+      const fileWidget = createFileWidget(file, folderId, path, selection);
+      contentSection.addWidget(fileWidget);
+
+      // If this file is the selected one, show the action buttons and description underneath it.
+      if (isSelected) {
+        const actionWidget = createActionWidget(selection, folderId, path);
+        contentSection.addWidget(actionWidget);
+        
+        let description = getFileDescription(selection.id, folderId);
+        if (description && description.trim() !== "No description provided." && description.trim() !== "") {
+            if (description.length > 255) {
+                description = description.substring(0, 252) + '...';
+            }
+            const formattedDescription = `<i><font color="#888888">${description}</font></i>`;
+            contentSection.addWidget(CardService.newTextParagraph().setText(formattedDescription));
+        }
       }
-    }
+    });
 
     if (!hasContent) {
       contentSection.addWidget(CardService.newTextParagraph().setText("This folder is empty."));
@@ -242,286 +153,287 @@ function createBrowserCard(folderId, path) {
     card.addSection(contentSection);
 
   } catch (err) {
-    console.error(`Error building browser card for folderId: ${folderId}. Error: ${err.message}`, err.stack);
-    return createErrorCard(err);
+    return createErrorCard(err, `Error building browser for folderId: ${folderId}`);
   }
-
   return card.build();
 }
 
 /**
- * Creates a widget for a single file. Since DecoratedText only supports one
- * button, this widget only includes the "Insert" action.
- * @param {DriveApp.File} file - The file object.
- * @param {string} parentFolderId - The ID of the parent folder.
- * @return {CardService.DecoratedText|null} The widget for the file or null if unsupported.
+ * Creates the action button widget for the selected file.
+ * @param {Object} selection - The selected file object.
+ * @param {string} parentFolderId - The ID of the current folder.
+ * @param {Array<Object>} path - The current breadcrumb path.
+ * @return {CardService.ButtonSet}
  */
-function createFileWidget(file, parentFolderId) {
-  const fileId = file.getId();
-  const fileName = file.getName();
-  const mimeType = file.getMimeType();
+function createActionWidget(selection, parentFolderId, path) {
+    const insertAction = CardService.newAction().setFunctionName('handleInsertAction')
+        .setParameters({ fileId: selection.id, mimeType: selection.mimeType });
+    const insertButton = CardService.newTextButton()
+        .setText("⬇️ Insert")
+        .setOnClickAction(insertAction);
 
-  const supportedMimeTypes = [MimeType.GOOGLE_DOCS, MimeType.JPEG, MimeType.PNG, MimeType.GIF];
-  if (!supportedMimeTypes.includes(mimeType)) return null;
+    const infoAction = CardService.newAction().setFunctionName('handleInfoAction')
+        .setParameters({ fileId: selection.id, parentFolderId: parentFolderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
+    const infoButton = CardService.newTextButton()
+        .setText("💬 Info")
+        .setOnClickAction(infoAction);
 
-  const actionParams = {
-    fileId: fileId,
-    mimeType: mimeType,
-    parentFolderId: parentFolderId
-  };
-    
-  // --- Create the interactive button ---
-  const insertAction = CardService.newAction().setFunctionName('handleInsertAction').setParameters(actionParams);
-  const insertButton = CardService.newTextButton()
-      .setText('Insert')
-      .setOnClickAction(insertAction);
+    return CardService.newButtonSet().addButton(insertButton).addButton(infoButton);
+}
 
-  // --- Create the main text widget and add the button to it ---
-  const decoratedText = CardService.newDecoratedText()
-    .setText(fileName)
+/**
+ * Creates a simple widget for a single file row that handles selection.
+ * @param {Object} file - A file object containing id, name, and mimeType.
+ * @param {string} parentFolderId - The ID of the current folder.
+ * @param {Array<Object>} path - The current breadcrumb path.
+ * @param {Object} selection - The currently selected file object.
+ * @return {CardService.DecoratedText|null} The widget for the file row.
+ */
+function createFileWidget(file, parentFolderId, path, selection) {
+  const isSelected = selection && selection.id === file.id;
+  const newSelection = isSelected ? {} : { id: file.id, name: file.name, mimeType: file.mimeType };
+  
+  const selectionAction = CardService.newAction().setFunctionName('handleFileSelection')
+    .setParameters({
+        folderId: parentFolderId,
+        path: JSON.stringify(path),
+        selection: JSON.stringify(newSelection)
+    });
+
+  let icon = '📄'; // Default file icon
+  if (file.mimeType.includes('image')) {
+    icon = '🌅';
+  }
+  
+  let fileNameText = file.name;
+
+  if (isSelected) {
+    icon = '✅';
+    fileNameText = `<b>${file.name}</b>`; // Bold the text when selected
+  }
+  
+  const textWidget = CardService.newDecoratedText()
+    .setText(`${icon} ${fileNameText}`)
     .setWrapText(true)
-    .setButton(insertButton);
+    .setOnClickAction(selectionAction);
   
-  // Set icon based on MIME type
-  if (mimeType === MimeType.GOOGLE_DOCS) {
-    decoratedText.setIcon(CardService.Icon.DESCRIPTION);
-  } else if (mimeType === MimeType.JPEG || mimeType === MimeType.PNG || mimeType === MimeType.GIF) {
-    decoratedText.setIcon(CardService.Icon.IMAGE);
-  }
-  
-  return decoratedText;
+  return textWidget;
 }
 
 /**
- * Handles saving the root folder from the configuration card.
- * @param {Object} e The event object containing form input.
- * @return {CardService.ActionResponse} The response to navigate to the browser or show an error.
+ * Creates a card that displays a detailed error message.
+ * @param {Error} error The error object.
+ * @param {string} contextMessage A user-friendly message about what failed.
+ * @return {CardService.Card} The error card.
  */
+function createErrorCard(error, contextMessage) {
+  console.error(`${contextMessage}: ${error.message}`, error.stack);
+  const card = CardService.newCardBuilder();
+  card.setHeader(CardService.newCardHeader().setTitle('An Error Occurred').setSubtitle(contextMessage));
+  const section = CardService.newCardSection();
+  section.addWidget(CardService.newTextParagraph().setText(`<b>Details:</b> ${error.message}`));
+  const resetAction = CardService.newAction().setFunctionName('handleResetAction');
+  section.addWidget(CardService.newTextButton().setText('Reset and Start Over').setOnClickAction(resetAction));
+  card.addSection(section);
+  return card.build();
+}
+
+
+// --- Action Handlers ---
+
 function handleSaveFolderAction(e) {
-  const folderUrl = e.formInput.folderUrl;
-  console.log(`handleSaveFolderAction called with URL: ${folderUrl}`);
-
-  if (!folderUrl) {
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText('Folder URL or ID cannot be empty.'))
-      .build();
-  }
-
-  let folderId;
-  const match = folderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
-  folderId = (match && match[1]) ? match[1] : folderUrl;
-  console.log(`Extracted folderId: ${folderId}`);
-
-  try {
-    const folder = DriveApp.getFolderById(folderId); // This validates the ID and permissions.
-    console.log(`Successfully validated folder: ${folder.getName()}`);
-    PropertiesService.getUserProperties().setProperty('rootFolderId', folderId);
-    console.log(`Set rootFolderId property to: ${folderId}`);
-
-    const browserCard = createBrowserCard(folderId, []);
-    const navigation = CardService.newNavigation().updateCard(browserCard);
-
-    return CardService.newActionResponseBuilder()
-      .setNavigation(navigation)
-      .setNotification(CardService.newNotification().setText(`Root folder set to "${folder.getName()}".`))
-      .build();
-  } catch (error) {
-    console.error(`Failed to validate or save folderId: ${folderId}. Error: ${error.message}`, error.stack);
-    // Instead of just a notification, show the full error card for immediate feedback.
-    const errorCard = createErrorCard(error);
-    const navigation = CardService.newNavigation().updateCard(errorCard);
-    return CardService.newActionResponseBuilder().setNavigation(navigation).build();
-  }
-}
-
-/**
- * Handles the "Reset" action, clearing the saved folder and showing the config card.
- * @param {Object} e The event object.
- * @return {CardService.ActionResponse} A response to show the config card.
- */
-function handleResetAction(e) {
-  console.log('handleResetAction called.');
-  PropertiesService.getUserProperties().deleteProperty('rootFolderId');
-  const configCard = createConfigurationCard(false);
-  const navigation = CardService.newNavigation().updateCard(configCard);
-
-  return CardService.newActionResponseBuilder()
-    .setNavigation(navigation)
-    .setNotification(CardService.newNotification().setText('Settings have been reset.'))
-    .build();
-}
-
-/**
- * Handles navigation clicks from the breadcrumb or folder list.
- * @param {Object} e The event object from a user click.
- * @return {CardService.ActionResponse} A navigation object to update the card.
- */
-function handleNavigation(e) {
-  const params = e.parameters;
-  const folderId = params.folderId;
-  const path = params.path ? JSON.parse(params.path) : [];
-  console.log(`Navigating to folderId: ${folderId}`);
-
-  const newCard = createBrowserCard(folderId, path);
-  const navigation = CardService.newNavigation().updateCard(newCard);
-  return CardService.newActionResponseBuilder().setNavigation(navigation).build();
-}
-
-/**
- * Handles the click of an "Insert" button. This function has been rewritten
- * for robustness to handle different cursor positions and content types.
- * @param {Object} e The event object from a user click.
- * @return {CardService.ActionResponse} A response with a notification for the user.
- */
-function handleInsertAction(e) {
-  const params = e.parameters;
-  const fileId = params.fileId;
-  const mimeType = params.mimeType;
-  console.log(`Attempting to insert fileId: ${fileId} (MIME: ${mimeType})`);
+  const folderUrl = e.formInput.folderUrl.trim();
+  const folderId = folderUrl.includes('folders/') ? folderUrl.substring(folderUrl.lastIndexOf('folders/') + 8).split('/')[0] : folderUrl;
   
-  const doc = DocumentApp.getActiveDocument();
-  const cursor = doc.getCursor();
-
-  if (!cursor) {
-    console.warn('Cannot insert content; cursor not found.');
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText('Cannot insert content. Please place your cursor in the document.'))
-      .build();
-  }
-
   try {
-    if (mimeType === MimeType.GOOGLE_DOCS) {
-      const sourceBody = DocumentApp.openById(fileId).getBody();
-      
-      // Determine the insertion point and its container element in a robust way.
-      let insertionPoint = cursor.getElement();
-      let container;
-
-      if (insertionPoint) {
-        container = insertionPoint.getParent();
-        // Traverse up to find a container that supports insertion methods.
-        while (container.getParent() &&
-               container.getType() !== DocumentApp.ElementType.BODY_SECTION &&
-               container.getType() !== DocumentApp.ElementType.HEADER_SECTION &&
-               container.getType() !== DocumentApp.ElementType.FOOTER_SECTION &&
-               container.getType() !== DocumentApp.ElementType.TABLE_CELL
-              ) {
-          insertionPoint = container;
-          container = insertionPoint.getParent();
-        }
-      } else {
-        // Cursor is not in an element, so insert into the main body at the end.
-        container = doc.getBody();
-        insertionPoint = null; // No specific element to insert after.
-      }
-      
-      // Calculate the insertion index based on the found element.
-      const insertionIndex = insertionPoint ? container.getChildIndex(insertionPoint) + 1 : container.getNumChildren();
-
-      // Loop backwards through the source elements to insert them in the correct order.
-      for (let i = sourceBody.getNumChildren() - 1; i >= 0; i--) {
-        const originalElement = sourceBody.getChild(i);
-        const elementToCopy = originalElement.copy();
-        
-        // IMPORTANT: Check if the element was copied successfully.
-        if (elementToCopy) {
-            const type = elementToCopy.getType();
-            if (type === DocumentApp.ElementType.PARAGRAPH) {
-              container.insertParagraph(insertionIndex, elementToCopy.asParagraph());
-            } else if (type === DocumentApp.ElementType.TABLE) {
-              container.insertTable(insertionIndex, elementToCopy.asTable());
-            } else if (type === DocumentApp.ElementType.LIST_ITEM) {
-              container.insertListItem(insertionIndex, elementToCopy.asListItem());
-            } else if (type === DocumentApp.ElementType.HORIZONTAL_RULE) {
-              container.insertHorizontalRule(insertionIndex);
-            }
-        } else {
-            console.warn(`Skipping an unsupported element type: ${originalElement.getType().name()} at source index ${i}.`);
-        }
-      }
-
-    } else if (mimeType === MimeType.JPEG || mimeType === MimeType.PNG || mimeType === MimeType.GIF) {
-      // For simple image files, just insert the image at the cursor.
-      const imageBlob = DriveApp.getFileById(fileId).getBlob();
-      cursor.insertImage(imageBlob);
-    }
-    
-    console.log('Content inserted successfully.');
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText('Content inserted successfully.'))
-      .build();
-  } catch (error) {
-    console.error(`Failed to insert fileId: ${fileId}. Error: ${error.message}`, error.stack);
-    return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification().setText(`Failed to insert file: ${error.message}`))
-      .build();
+    DriveApp.getFolderById(folderId);
+    PropertiesService.getUserProperties().setProperty('rootFolderId', folderId);
+    const newCard = createBrowserCard(folderId, [], {});
+    return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
+  } catch (err) {
+    const errorCard = createErrorCard(err, `Could not access folder with ID "${folderId}".`);
+    return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(errorCard)).build();
   }
 }
 
-/**
- * Handles the click of an "Info" button. Shows a modal card with the file's description.
- * @param {Object} e The event object from a user click.
- * @return {CardService.ActionResponse} The response to open the info card.
- */
+function handleResetAction() {
+  PropertiesService.getUserProperties().deleteProperty('rootFolderId');
+  const card = createConfigurationCard();
+  return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(card)).build();
+}
+
+function handleNavigation(e) {
+  const folderId = e.parameters.folderId;
+  const path = JSON.parse(e.parameters.path);
+  const selection = JSON.parse(e.parameters.selection);
+  const newCard = createBrowserCard(folderId, path, selection);
+  return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
+}
+
+function handleFileSelection(e) {
+    const folderId = e.parameters.folderId;
+    const path = JSON.parse(e.parameters.path);
+    const selection = JSON.parse(e.parameters.selection);
+    const newCard = createBrowserCard(folderId, path, selection);
+    return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
+}
+
+function handleInsertAction(e) {
+  try {
+    insertContent(e.parameters.fileId, e.parameters.mimeType);
+    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText("Content inserted.")).build();
+  } catch (err) {
+    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText(`Insertion Failed: ${err.message}`)).build();
+  }
+}
+
 function handleInfoAction(e) {
   const params = e.parameters;
   const file = DriveApp.getFileById(params.fileId);
-  const parentFolder = DriveApp.getFolderById(params.parentFolderId);
-  const descriptionFileName = `.${params.fileId}.description.json`;
-  const existingFiles = parentFolder.getFilesByName(descriptionFileName);
-  let description = "No description provided.";
-
-  if (existingFiles.hasNext()) {
-    try {
-      const data = JSON.parse(existingFiles.next().getBlob().getDataAsString());
-      description = data.description;
-    } catch (err) { /* Ignore parsing errors */ }
-  }
-
+  const description = getFileDescription(params.fileId, params.parentFolderId);
+  
   const card = CardService.newCardBuilder()
     .setHeader(CardService.newCardHeader().setTitle(`Description for ${file.getName()}`))
     .addSection(CardService.newCardSection().addWidget(
       CardService.newTextInput()
-      .setFieldName('description_text')
-      .setTitle('Edit Description')
-      .setValue(description)
-      .setMultiline(true)
-    ))
+        .setFieldName('description_text')
+        .setTitle('Edit Description')
+        .setValue(description)
+        .setMultiline(true)))
     .setFixedFooter(CardService.newFixedFooter().setPrimaryButton(
       CardService.newTextButton()
-      .setText('Save')
-      .setOnClickAction(CardService.newAction().setFunctionName('handleSaveDescriptionAction').setParameters(params))
-    )).build();
+        .setText('Save')
+        .setOnClickAction(CardService.newAction().setFunctionName('handleSaveDescriptionAction').setParameters(params))))
+    .build();
 
   return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().pushCard(card)).build();
 }
 
-/**
- * Saves the description from the info modal.
- * @param {Object} e The event object from a user click.
- * @return {CardService.ActionResponse} A response that closes the modal.
- */
 function handleSaveDescriptionAction(e) {
   const params = e.parameters;
-  const newDescription = e.formInput.description_text;
-  const descriptionFileName = `.${params.fileId}.description.json`;
-  const parentFolder = DriveApp.getFolderById(params.parentFolderId);
-  const existingFiles = parentFolder.getFilesByName(descriptionFileName);
-
-  const descriptionData = {
-    description: newDescription,
-    lastUpdated: new Date().toISOString()
-  };
-  const content = JSON.stringify(descriptionData, null, 2);
-
-  if (existingFiles.hasNext()) {
-    existingFiles.next().setContent(content);
-  } else {
-    parentFolder.createFile(descriptionFileName, content, MimeType.PLAIN_TEXT);
-  }
-
+  saveFileDescription(params.fileId, params.parentFolderId, e.formInput.description_text);
+  
+  // Rebuild the card to return to the same state.
+  const path = JSON.parse(params.path);
+  const selection = JSON.parse(params.selection);
+  const card = createBrowserCard(params.parentFolderId, path, selection);
+  
   return CardService.newActionResponseBuilder()
     .setNotification(CardService.newNotification().setText('Description saved.'))
-    .setNavigation(CardService.newNavigation().popCard())
+    .setNavigation(CardService.newNavigation().updateCard(card))
     .build();
+}
+
+
+// --- Backend Logic Functions ---
+
+function getFolderContents(folderId) {
+    const folder = DriveApp.getFolderById(folderId);
+    const folders = [];
+    const files = [];
+
+    const subfolders = folder.getFolders();
+    while (subfolders.hasNext()) {
+      const sub = subfolders.next();
+      folders.push({ id: sub.getId(), name: sub.getName() });
+    }
+
+    const fileIterator = folder.getFiles();
+    const supportedMimeTypes = [MimeType.GOOGLE_DOCS, MimeType.JPEG, MimeType.PNG, MimeType.GIF];
+    while (fileIterator.hasNext()) {
+      const file = fileIterator.next();
+      if (supportedMimeTypes.includes(file.getMimeType())) {
+        files.push({ id: file.getId(), name: file.getName(), mimeType: file.getMimeType() });
+      }
+    }
+
+    // Sort alphabetically
+    folders.sort((a, b) => a.name.localeCompare(b.name));
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    return { folders, files };
+}
+
+function getFileDescription(fileId, parentFolderId) {
+  const parentFolder = DriveApp.getFolderById(parentFolderId);
+  const fileName = `.${fileId}.description.json`;
+  const files = parentFolder.getFilesByName(fileName);
+  if (files.hasNext()) {
+    try {
+      return JSON.parse(files.next().getBlob().getDataAsString()).description;
+    } catch (e) { console.error(`Error parsing description for ${fileId}: ${e.message}`); }
+  }
+  return "";
+}
+
+function saveFileDescription(fileId, parentFolderId, description) {
+  const parentFolder = DriveApp.getFolderById(parentFolderId);
+  const fileName = `.${fileId}.description.json`;
+  const files = parentFolder.getFilesByName(fileName);
+  const data = { description: description, lastUpdated: new Date().toISOString() };
+  const content = JSON.stringify(data, null, 2);
+
+  if (files.hasNext()) {
+    files.next().setContent(content);
+  } else {
+    parentFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+  }
+}
+
+function insertContent(fileId, mimeType) {
+  const doc = DocumentApp.getActiveDocument();
+  const cursor = doc.getCursor();
+
+  if (!cursor) {
+    throw new Error('Cannot insert content. Please place your cursor in the document.');
+  }
+
+  if (mimeType.includes('image')) {
+    const imageBlob = DriveApp.getFileById(fileId).getBlob();
+    cursor.insertImage(imageBlob);
+    return;
+  }
+
+  if (mimeType === MimeType.GOOGLE_DOCS) {
+    const sourceBody = DocumentApp.openById(fileId).getBody();
+    let insertionPoint = cursor.getElement();
+    let container;
+
+    if (insertionPoint) {
+      container = insertionPoint.getParent();
+      while (container.getParent() &&
+             container.getType() !== DocumentApp.ElementType.BODY_SECTION &&
+             container.getType() !== DocumentApp.ElementType.HEADER_SECTION &&
+             container.getType() !== DocumentApp.ElementType.FOOTER_SECTION &&
+             container.getType() !== DocumentApp.ElementType.TABLE_CELL) {
+        insertionPoint = container;
+        container = insertionPoint.getParent();
+      }
+    } else {
+      container = doc.getBody();
+      insertionPoint = null;
+    }
+    
+    const insertionIndex = insertionPoint ? container.getChildIndex(insertionPoint) + 1 : container.getNumChildren();
+
+    for (let i = sourceBody.getNumChildren() - 1; i >= 0; i--) {
+      const originalElement = sourceBody.getChild(i);
+      const elementToCopy = originalElement.copy();
+      
+      if (elementToCopy) {
+        const type = elementToCopy.getType();
+        if (type === DocumentApp.ElementType.PARAGRAPH) {
+          container.insertParagraph(insertionIndex, elementToCopy.asParagraph());
+        } else if (type === DocumentApp.ElementType.TABLE) {
+          container.insertTable(insertionIndex, elementToCopy.asTable());
+        } else if (type === DocumentApp.ElementType.LIST_ITEM) {
+          container.insertListItem(insertionIndex, elementToCopy.asListItem());
+        } else if (type === DocumentApp.ElementType.HORIZONTAL_RULE) {
+          container.insertHorizontalRule(insertionIndex);
+        }
+      } else {
+        console.warn(`Skipping an unsupported element type: ${originalElement.getType()} at source index ${i}.`);
+      }
+    }
+  }
 }

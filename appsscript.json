@@ -6,14 +6,13 @@
   "oauthScopes": [
     "https://www.googleapis.com/auth/script.container.ui",
     "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/script.storage"
+    "https://www.googleapis.com/auth/script.storage",
+    "https://www.googleapis.com/auth/drive"
   ],
   "addOns": {
     "common": {
       "name": "Drive Content Inserter",
-      "logoUrl": "https://cdn-icons-png.flaticon.com/128/8591/8591551.png",
+      "logoUrl": "https://fonts.gstatic.com/s/i/googlematerialicons/extension/v13/black-24dp/1x/gm_extension_black_24dp.png",
       "layoutProperties": {
         "primaryColor": "#2196F3",
         "secondaryColor": "#1976D2"
@@ -22,10 +21,6 @@
         "runFunction": "onHomepage"
       }
     },
-    "docs": {
-      "onFileScopeGrantedTrigger": {
-        "runFunction": "onDocsHomepage"
-      }
-    }
+    "docs": {}
   }
 }
