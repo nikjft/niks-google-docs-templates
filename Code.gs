@@ -169,16 +169,22 @@ function createActionWidget(selection, parentFolderId, path) {
     const insertAction = CardService.newAction().setFunctionName('handleInsertAction')
         .setParameters({ fileId: selection.id, mimeType: selection.mimeType });
     const insertButton = CardService.newTextButton()
-        .setText("⬇️ Insert")
+        .setText("⬇️")
         .setOnClickAction(insertAction);
 
     const infoAction = CardService.newAction().setFunctionName('handleInfoAction')
         .setParameters({ fileId: selection.id, parentFolderId: parentFolderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
     const infoButton = CardService.newTextButton()
-        .setText("💬 Info")
+        .setText("💬")
         .setOnClickAction(infoAction);
 
-    return CardService.newButtonSet().addButton(insertButton).addButton(infoButton);
+    const editAction = CardService.newAction().setFunctionName('handleEditAction')
+        .setParameters({ fileId: selection.id });
+    const editButton = CardService.newTextButton()
+        .setText("✍️")
+        .setOnClickAction(editAction);
+
+    return CardService.newButtonSet().addButton(insertButton).addButton(infoButton).addButton(editButton);
 }
 
 /**
@@ -309,11 +315,18 @@ function handleInfoAction(e) {
   return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().pushCard(card)).build();
 }
 
+function handleEditAction(e) {
+    const fileId = e.parameters.fileId;
+    const file = DriveApp.getFileById(fileId);
+    const url = file.getUrl();
+    const openLink = CardService.newOpenLink().setUrl(url);
+    return CardService.newActionResponseBuilder().setOpenLink(openLink).build();
+}
+
 function handleSaveDescriptionAction(e) {
   const params = e.parameters;
   saveFileDescription(params.fileId, params.parentFolderId, e.formInput.description_text);
   
-  // Rebuild the card to return to the same state.
   const path = JSON.parse(params.path);
   const selection = JSON.parse(params.selection);
   const card = createBrowserCard(params.parentFolderId, path, selection);
@@ -380,6 +393,12 @@ function saveFileDescription(fileId, parentFolderId, description) {
   }
 }
 
+/**
+ * Inserts content from a Google Doc or an image into the active document.
+ * This version now correctly handles embedded images within paragraphs and list styles.
+ * @param {string} fileId The ID of the file to insert.
+ * @param {string} mimeType The MIME type of the file.
+ */
 function insertContent(fileId, mimeType) {
   const doc = DocumentApp.getActiveDocument();
   const cursor = doc.getCursor();
@@ -401,39 +420,66 @@ function insertContent(fileId, mimeType) {
 
     if (insertionPoint) {
       container = insertionPoint.getParent();
-      while (container.getParent() &&
-             container.getType() !== DocumentApp.ElementType.BODY_SECTION &&
-             container.getType() !== DocumentApp.ElementType.HEADER_SECTION &&
-             container.getType() !== DocumentApp.ElementType.FOOTER_SECTION &&
-             container.getType() !== DocumentApp.ElementType.TABLE_CELL) {
+      while (container && container.getParent() && container.getType() !== DocumentApp.ElementType.BODY_SECTION) {
         insertionPoint = container;
         container = insertionPoint.getParent();
       }
-    } else {
-      container = doc.getBody();
-      insertionPoint = null;
+    }
+    
+    if (!container || typeof container.insertParagraph !== 'function') {
+        container = doc.getBody();
+        insertionPoint = null;
     }
     
     const insertionIndex = insertionPoint ? container.getChildIndex(insertionPoint) + 1 : container.getNumChildren();
 
     for (let i = sourceBody.getNumChildren() - 1; i >= 0; i--) {
-      const originalElement = sourceBody.getChild(i);
-      const elementToCopy = originalElement.copy();
-      
-      if (elementToCopy) {
-        const type = elementToCopy.getType();
+        const originalElement = sourceBody.getChild(i);
+        const type = originalElement.getType();
+        
         if (type === DocumentApp.ElementType.PARAGRAPH) {
-          container.insertParagraph(insertionIndex, elementToCopy.asParagraph());
+            const sourcePara = originalElement.asParagraph();
+            const targetPara = container.insertParagraph(insertionIndex, "");
+            
+            for (let j = 0; j < sourcePara.getNumChildren(); j++) {
+                const child = sourcePara.getChild(j);
+                const childCopy = child.copy();
+                const childType = childCopy.getType();
+
+                if (childType === DocumentApp.ElementType.TEXT) {
+                    const textElement = childCopy.asText();
+                    const textContent = textElement.getText();
+                    if (textContent) {
+                       const appendedText = targetPara.appendText(textContent);
+                       appendedText.setAttributes(textElement.getAttributes());
+                    }
+                } else if (childType === DocumentApp.ElementType.INLINE_IMAGE) {
+                    const sourceImage = child.asInlineImage();
+                    const targetImage = targetPara.appendInlineImage(sourceImage.copy());
+                    // The copy() method on InlineImage is the most reliable way
+                    // to preserve its state, but size needs to be set manually.
+                    targetImage.setHeight(sourceImage.getHeight());
+                    targetImage.setWidth(sourceImage.getWidth());
+                }
+            }
+            targetPara.setAttributes(sourcePara.getAttributes());
+
         } else if (type === DocumentApp.ElementType.TABLE) {
-          container.insertTable(insertionIndex, elementToCopy.asTable());
+            container.insertTable(insertionIndex, originalElement.copy().asTable());
         } else if (type === DocumentApp.ElementType.LIST_ITEM) {
-          container.insertListItem(insertionIndex, elementToCopy.asListItem());
-        } else if (type === DocumentApp.ElementType.HORIZONTAL_RULE) {
-          container.insertHorizontalRule(insertionIndex);
+            const sourceListItem = originalElement.asListItem();
+            const targetListItem = container.insertListItem(insertionIndex, sourceListItem.copy());
+            targetListItem.setGlyphType(sourceListItem.getGlyphType());
+        } else {
+            const elementCopy = originalElement.copy();
+            if (elementCopy) {
+                if (type === DocumentApp.ElementType.HORIZONTAL_RULE) {
+                    container.insertHorizontalRule(insertionIndex);
+                }
+            } else {
+                console.warn(`Skipping an unsupported element type: ${type}`);
+            }
         }
-      } else {
-        console.warn(`Skipping an unsupported element type: ${originalElement.getType()} at source index ${i}.`);
-      }
     }
   }
 }
