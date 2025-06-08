@@ -1,10 +1,7 @@
 # Nik's Google Docs Templates 
 *For Google Workspace*
 
-Welcome to Nik’s Google Docs Templates
-This add-on makes it easy to build Google Docs out of other docs and images.
-
-Great for templating, quickly inserting commonly used text, or creating document frameworks, rather than whole templates.
+This add-on makes it easy to build a library of docs and images and quickly insert them into Google Docs. Unlike "Building Blocks," these can be shared with other people and have helpful descriptions.
 
 ## Configure the Add-On
 1. Create templates of docs and images in a folder in your Google Drive
@@ -21,7 +18,7 @@ Great for templating, quickly inserting commonly used text, or creating document
 1. Select a document template
 1. Use the ✅button to insert the template 
 
-*NOTE: Some Google Docs formatting aren’t supported, those files cannot be used as templates*
+*__NOTE:__* Some Google Docs formatting aren’t supported, those files cannot be used as templates*
 
 ## Add Descriptions to your Documents
 1. Click the 💬 to add a useful description to any template or asset
@@ -35,12 +32,12 @@ Great for templating, quickly inserting commonly used text, or creating document
 1. To access help, go to the Extensions menu, there is also a reset option there
 
 ## Support
-1. This is a little utility created by a decidedly bad developer, use at your own risk
 1. Feel free to leave issues here in GitHub, but I cannot guarantee a response
 2. Pull requests are also welcome
+3. **Warning:** Code was written by a crappy developer with the assistance of AI. There be dragons. Shouldn't be anything destructive, but always back up your files.
 
-## Policies
-1. This is released under a very permissive open source license, you can basically use it however you like. (See the LICENSE file for details)
-2. This app does not track any information, have any analytics, or save any of your information to the cloud. It just runs on your own computer.
 
-Code was written by a crappy developer with the assistance of AI. There be dragons. Shouldn't be anything destructive, but always back up your files.
+## Legal
+1. License and Repurposing: This is released under the BSD 3-Clause License
+2. Privacy: This app does not track any information, have any analytics, or save any of your information to the cloud. It just runs on your own computer.
+
