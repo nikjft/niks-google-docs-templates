@@ -11,7 +11,7 @@
   ],
   "addOns": {
     "common": {
-      "name": "Nik's Google Doc Templates",
+      "name": "Drive Content Inserter",
       "logoUrl": "https://nikjft.github.io/niks-google-docs-templates/icon.png",
       "layoutProperties": {
         "primaryColor": "#2196F3",

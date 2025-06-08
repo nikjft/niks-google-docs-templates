@@ -85,8 +85,8 @@ function createBrowserCard(folderId, path, selection) {
     const folder = DriveApp.getFolderById(folderId);
     const folderContents = getFolderContents(folderId);
     
-    // --- Breadcrumb Section ---
-    const breadcrumbSection = CardService.newCardSection().setHeader("Path");
+    // --- Breadcrumb & Controls Section ---
+    const controlsSection = CardService.newCardSection().setHeader("Path");
     const breadcrumbSet = CardService.newButtonSet();
     const rootId = PropertiesService.getUserProperties().getProperty('rootFolderId');
 
@@ -98,15 +98,22 @@ function createBrowserCard(folderId, path, selection) {
           .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: rootId, path: '[]', selection: '{}' })));
 
         path.forEach((p, index) => {
+          if (p.id === rootId) return;
           breadcrumbSet.addButton(CardService.newTextButton()
             .setText(p.name)
             .setTextButtonStyle(CardService.TextButtonStyle.TEXT)
-            .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: p.id, path: JSON.stringify(path.slice(0, index)), selection: '{}' })));
+            .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: p.id, path: JSON.stringify(path.slice(0, path.indexOf(p))), selection: '{}' })));
         });
-        breadcrumbSection.addWidget(breadcrumbSet);
+        controlsSection.addWidget(breadcrumbSet);
     }
-    breadcrumbSection.addWidget(CardService.newDecoratedText().setText(folder.getName()).setTopLabel("Current Folder"));
-    card.addSection(breadcrumbSection);
+    controlsSection.addWidget(CardService.newDecoratedText().setText(folder.getName()).setTopLabel("Current Folder"));
+    
+    // Add Refresh button
+    const refreshAction = CardService.newAction().setFunctionName('handleRefreshAction')
+      .setParameters({ folderId: folderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
+    controlsSection.addWidget(CardService.newTextButton().setText("🔄 Refresh").setOnClickAction(refreshAction).setTextButtonStyle(CardService.TextButtonStyle.TEXT));
+    
+    card.addSection(controlsSection);
 
 
     // --- Content Section ---
@@ -118,7 +125,7 @@ function createBrowserCard(folderId, path, selection) {
         hasContent = true;
         const newPathForSubfolder = [...path, { id: folderId, name: folder.getName() }];
         contentSection.addWidget(CardService.newDecoratedText()
-            .setText(`📁 ${subfolder.name}`) // Add folder emoji
+            .setText(`📁 ${subfolder.name}`)
             .setWrapText(true)
             .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: subfolder.id, path: JSON.stringify(newPathForSubfolder), selection: '{}' })));
     });
@@ -131,7 +138,6 @@ function createBrowserCard(folderId, path, selection) {
       const fileWidget = createFileWidget(file, folderId, path, selection);
       contentSection.addWidget(fileWidget);
 
-      // If this file is the selected one, show the action buttons and description underneath it.
       if (isSelected) {
         const actionWidget = createActionWidget(selection, folderId, path);
         contentSection.addWidget(actionWidget);
@@ -284,6 +290,23 @@ function handleFileSelection(e) {
     return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
 }
 
+function handleRefreshAction(e) {
+    const params = e.parameters;
+    const folderId = params.folderId;
+    Logger.log(`Clearing cache for folderId: ${folderId}`);
+    const cacheKey = `contents_${folderId}`;
+    CacheService.getScriptCache().remove(cacheKey);
+    
+    const path = JSON.parse(params.path);
+    const selection = JSON.parse(params.selection);
+    const newCard = createBrowserCard(folderId, path, selection);
+
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText("Folder refreshed."))
+        .setNavigation(CardService.newNavigation().updateCard(newCard))
+        .build();
+}
+
 function handleInsertAction(e) {
   try {
     insertContent(e.parameters.fileId, e.parameters.mimeType);
@@ -341,6 +364,16 @@ function handleSaveDescriptionAction(e) {
 // --- Backend Logic Functions ---
 
 function getFolderContents(folderId) {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `contents_${folderId}`;
+    const cachedContents = cache.get(cacheKey);
+
+    if (cachedContents) {
+        Logger.log(`Cache hit for folderId: ${folderId}`);
+        return JSON.parse(cachedContents);
+    }
+    Logger.log(`Cache miss for folderId: ${folderId}. Fetching from Drive.`);
+
     const folder = DriveApp.getFolderById(folderId);
     const folders = [];
     const files = [];
@@ -364,7 +397,10 @@ function getFolderContents(folderId) {
     folders.sort((a, b) => a.name.localeCompare(b.name));
     files.sort((a, b) => a.name.localeCompare(b.name));
 
-    return { folders, files };
+    const contents = { folders, files };
+    cache.put(cacheKey, JSON.stringify(contents), 300);
+
+    return contents;
 }
 
 function getFileDescription(fileId, parentFolderId) {
@@ -395,7 +431,7 @@ function saveFileDescription(fileId, parentFolderId, description) {
 
 /**
  * Inserts content from a Google Doc or an image into the active document.
- * This version now correctly handles embedded images within paragraphs and list styles.
+ * This version now correctly handles embedded images with their layout properties.
  * @param {string} fileId The ID of the file to insert.
  * @param {string} mimeType The MIME type of the file.
  */
@@ -441,35 +477,23 @@ function insertContent(fileId, mimeType) {
             const sourcePara = originalElement.asParagraph();
             const targetPara = container.insertParagraph(insertionIndex, "");
             
+            targetPara.setAttributes(sourcePara.getAttributes());
+            
             for (let j = 0; j < sourcePara.getNumChildren(); j++) {
                 const child = sourcePara.getChild(j);
-                const childCopy = child.copy();
-                const childType = childCopy.getType();
+                const childType = child.getType();
 
                 if (childType === DocumentApp.ElementType.TEXT) {
-                    const textElement = childCopy.asText();
-                    const textContent = textElement.getText();
-                    if (textContent) {
-                       const appendedText = targetPara.appendText(textContent);
-                       appendedText.setAttributes(textElement.getAttributes());
-                    }
+                    targetPara.appendText(child.asText().copy());
                 } else if (childType === DocumentApp.ElementType.INLINE_IMAGE) {
-                    const sourceImage = child.asInlineImage();
-                    const targetImage = targetPara.appendInlineImage(sourceImage.copy());
-                    // The copy() method on InlineImage is the most reliable way
-                    // to preserve its state, but size needs to be set manually.
-                    targetImage.setHeight(sourceImage.getHeight());
-                    targetImage.setWidth(sourceImage.getWidth());
+                    targetPara.appendInlineImage(child.asInlineImage().copy());
                 }
             }
-            targetPara.setAttributes(sourcePara.getAttributes());
 
         } else if (type === DocumentApp.ElementType.TABLE) {
             container.insertTable(insertionIndex, originalElement.copy().asTable());
         } else if (type === DocumentApp.ElementType.LIST_ITEM) {
-            const sourceListItem = originalElement.asListItem();
-            const targetListItem = container.insertListItem(insertionIndex, sourceListItem.copy());
-            targetListItem.setGlyphType(sourceListItem.getGlyphType());
+            container.insertListItem(insertionIndex, originalElement.copy().asListItem());
         } else {
             const elementCopy = originalElement.copy();
             if (elementCopy) {
