@@ -12,7 +12,7 @@
   "addOns": {
     "common": {
       "name": "Nik's Google Docs Templates",
-      "logoUrl": "https://nikjft.github.io/niks-google-docs-templates/icon.png",
+      "logoUrl": "https://nikjft.github.io/niks-google-docs-templates/icon.png?cb=1",
       "layoutProperties": {
         "primaryColor": "#2196F3",
         "secondaryColor": "#1976D2"

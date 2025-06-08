@@ -181,7 +181,7 @@ function insertContent(fileId, mimeType) {
 
   if (mimeType.includes('image')) {
     const imageBlob = DriveApp.getFileById(fileId).getBlob();
-    cursor.insertImage(imageBlob);
+    cursor.insertInlineImage(imageBlob);
     return;
   }
 
@@ -213,16 +213,18 @@ function insertContent(fileId, mimeType) {
             const sourcePara = originalElement.asParagraph();
             const targetPara = container.insertParagraph(insertionIndex, "");
             
+            // Set attributes on the new paragraph first.
             targetPara.setAttributes(sourcePara.getAttributes());
             
+            // Append children one by one, using the correct methods.
             for (let j = 0; j < sourcePara.getNumChildren(); j++) {
                 const child = sourcePara.getChild(j);
                 const childType = child.getType();
 
                 if (childType === DocumentApp.ElementType.TEXT) {
-                    targetPara.append(child.copy());
+                    targetPara.appendText(child.asText().copy());
                 } else if (childType === DocumentApp.ElementType.INLINE_IMAGE) {
-                    targetPara.append(child.copy());
+                    targetPara.appendInlineImage(child.asInlineImage().copy());
                 }
             }
 
