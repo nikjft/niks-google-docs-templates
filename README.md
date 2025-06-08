@@ -1,4 +1,5 @@
-# Nik's Google Docs Templates
+# Nik's Google Docs Templates 
+*For Google Workspace*
 
 This is a Google Workspace add-on which lets you insert Google Docs files within your Google Drive into an existing document, thereby giving you modular templates to build files from.
 
