@@ -1,9 +1,14 @@
 function handleSaveFolderAction(e) {
   const folderUrl = e.formInput.folderUrl.trim();
-  const folderId = folderUrl.includes('folders/') ? folderUrl.substring(folderUrl.lastIndexOf('folders/') + 8).split('/')[0] : folderUrl;
+  if (!folderUrl) {
+    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText("Please provide a folder URL or ID.")).build();
+  }
+
+  const match = folderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+  const folderId = (match && match[1]) ? match[1] : folderUrl;
   
   try {
-    DriveApp.getFolderById(folderId);
+    DriveApp.getFolderById(folderId); // Validate the ID
     PropertiesService.getUserProperties().setProperty('rootFolderId', folderId);
     const newCard = createBrowserCard(folderId, [], {});
     return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
@@ -21,9 +26,8 @@ function handleResetAction() {
 
 function handleNavigation(e) {
   const folderId = e.parameters.folderId;
-  const path = JSON.parse(e.parameters.path);
-  const selection = JSON.parse(e.parameters.selection);
-  const newCard = createBrowserCard(folderId, path, selection);
+  const path = e.parameters.path ? JSON.parse(e.parameters.path) : [];
+  const newCard = createBrowserCard(folderId, path, {});
   return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
 }
 
@@ -38,7 +42,7 @@ function handleFileSelection(e) {
 function handleRefreshAction(e) {
     const params = e.parameters;
     const folderId = params.folderId;
-    Logger.log(`Clearing cache for folderId: ${folderId}`);
+    pruneInfoFile(folderId);
     const cacheKey = `contents_${folderId}`;
     CacheService.getScriptCache().remove(cacheKey);
     
@@ -50,6 +54,33 @@ function handleRefreshAction(e) {
         .setNotification(CardService.newNotification().setText("Folder refreshed."))
         .setNavigation(CardService.newNavigation().updateCard(newCard))
         .build();
+}
+
+function handleCreateNewTemplate(e) {
+  try {
+    const params = e.parameters;
+    const folderId = params.folderId;
+    const newDoc = createNewTemplateInFolder(folderId);
+    
+    const cacheKey = `contents_${folderId}`;
+    CacheService.getScriptCache().remove(cacheKey);
+    
+    const path = JSON.parse(params.path);
+    const newCard = createBrowserCard(folderId, path, {});
+    
+    const navigation = CardService.newNavigation().updateCard(newCard);
+    const openLink = CardService.newOpenLink().setUrl(newDoc.getUrl());
+
+    return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText(`Created "${newDoc.getName()}"`))
+        .setOpenLink(openLink)
+        .setNavigation(navigation)
+        .build();
+  } catch (err) {
+    return CardService.newActionResponseBuilder()
+        .setNavigation(CardService.newNavigation().updateCard(createErrorCard(err, "Failed to create new template.")))
+        .build();
+  }
 }
 
 function handleInsertAction(e) {
@@ -85,10 +116,8 @@ function handleInfoAction(e) {
 
 function handleEditAction(e) {
     const fileId = e.parameters.fileId;
-    const file = DriveApp.getFileById(fileId);
-    const url = file.getUrl();
-    const openLink = CardService.newOpenLink().setUrl(url);
-    return CardService.newActionResponseBuilder().setOpenLink(openLink).build();
+    const url = DriveApp.getFileById(fileId).getUrl();
+    return CardService.newActionResponseBuilder().setOpenLink(CardService.newOpenLink().setUrl(url)).build();
 }
 
 function handleSaveDescriptionAction(e) {

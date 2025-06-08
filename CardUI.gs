@@ -37,10 +37,23 @@ function createBrowserCard(folderId, path, selection) {
   const card = CardService.newCardBuilder();
   card.setHeader(CardService.newCardHeader().setTitle('Drive Content Inserter'));
 
+  // --- Add items to the ... card menu ---
   const resetAction = CardService.newAction().setFunctionName('handleResetAction');
   card.addCardAction(CardService.newCardAction()
     .setText('Reset Root Folder')
     .setOnClickAction(resetAction));
+    
+  const newTemplateAction = CardService.newAction().setFunctionName('handleCreateNewTemplate')
+      .setParameters({ folderId: folderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
+  card.addCardAction(CardService.newCardAction()
+      .setText('New Template...')
+      .setOnClickAction(newTemplateAction));
+      
+  const refreshAction = CardService.newAction().setFunctionName('handleRefreshAction')
+      .setParameters({ folderId: folderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
+  card.addCardAction(CardService.newCardAction()
+      .setText('Reload Folder')
+      .setOnClickAction(refreshAction));
 
   try {
     const folder = DriveApp.getFolderById(folderId);
@@ -52,30 +65,33 @@ function createBrowserCard(folderId, path, selection) {
     const rootId = PropertiesService.getUserProperties().getProperty('rootFolderId');
 
     if (rootId) {
-        const rootFolder = DriveApp.getFolderById(rootId);
-        breadcrumbSet.addButton(CardService.newTextButton()
-          .setText(rootFolder.getName())
-          .setTextButtonStyle(CardService.TextButtonStyle.TEXT)
-          .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: rootId, path: '[]', selection: '{}' })));
+        // The path passed in is the list of ancestors. The current folder is `folder`.
+        // We construct the full path for display by combining them.
+        const fullDisplayPath = [...path, { id: folder.getId(), name: folder.getName() }];
 
-        path.forEach((p, index) => {
-          if (p.id === rootId) return;
-          breadcrumbSet.addButton(CardService.newTextButton()
-            .setText(p.name)
-            .setTextButtonStyle(CardService.TextButtonStyle.TEXT)
-            .setOnClickAction(CardService.newAction().setFunctionName('handleNavigation').setParameters({ folderId: p.id, path: JSON.stringify(path.slice(0, path.indexOf(p))), selection: '{}' })));
+        fullDisplayPath.forEach((p, index) => {
+            const isLastItem = index === fullDisplayPath.length - 1;
+            
+            // The path to navigate to is the list of items *before* the clicked item.
+            const navigationPath = fullDisplayPath.slice(0, index);
+
+            const button = CardService.newTextButton()
+                .setText(p.name)
+                .setDisabled(isLastItem) // Disable the last button (current folder)
+                .setTextButtonStyle(isLastItem ? CardService.TextButtonStyle.FILLED : CardService.TextButtonStyle.TEXT)
+                .setOnClickAction(CardService.newAction()
+                    .setFunctionName('handleNavigation')
+                    .setParameters({
+                        folderId: p.id,
+                        path: JSON.stringify(navigationPath), 
+                        selection: '{}'
+                    }));
+            breadcrumbSet.addButton(button);
         });
+        
         controlsSection.addWidget(breadcrumbSet);
     }
-    controlsSection.addWidget(CardService.newDecoratedText().setText(folder.getName()).setTopLabel("Current Folder"));
-    
-    // Add Refresh button
-    const refreshAction = CardService.newAction().setFunctionName('handleRefreshAction')
-      .setParameters({ folderId: folderId, path: JSON.stringify(path), selection: JSON.stringify(selection) });
-    controlsSection.addWidget(CardService.newTextButton().setText("🔄 Refresh").setOnClickAction(refreshAction).setTextButtonStyle(CardService.TextButtonStyle.TEXT));
-    
     card.addSection(controlsSection);
-
 
     // --- Content Section ---
     const contentSection = CardService.newCardSection().setHeader("Contents");
@@ -136,7 +152,7 @@ function createActionWidget(selection, parentFolderId, path) {
     const insertAction = CardService.newAction().setFunctionName('handleInsertAction')
         .setParameters({ fileId: selection.id, mimeType: selection.mimeType });
     const insertButton = CardService.newTextButton()
-        .setText("⬇️")
+        .setText("✅")
         .setOnClickAction(insertAction);
 
     const infoAction = CardService.newAction().setFunctionName('handleInfoAction')
@@ -181,7 +197,7 @@ function createFileWidget(file, parentFolderId, path, selection) {
   let fileNameText = file.name;
 
   if (isSelected) {
-    icon = '✅';
+    icon = '🟢';
     fileNameText = `<b>${file.name}</b>`; // Bold the text when selected
   }
   

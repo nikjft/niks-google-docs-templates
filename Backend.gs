@@ -45,41 +45,125 @@ function getFolderContents(folderId) {
 }
 
 /**
- * Gets the description for a file from its corresponding JSON file.
+ * Gets the entire info data object for a given folder.
+ * @param {string} folderId The ID of the folder.
+ * @return {Object} The parsed JSON data from the info file, or an empty object.
+ */
+function getInfoData(folderId) {
+    const folder = DriveApp.getFolderById(folderId);
+    const fileName = ".nik-template-info.json";
+    const files = folder.getFilesByName(fileName);
+    if (files.hasNext()) {
+        try {
+            const content = files.next().getBlob().getDataAsString();
+            return JSON.parse(content);
+        } catch (e) {
+            console.error(`Error parsing info file in folder ${folderId}: ${e.message}`);
+            return {}; // Return empty object on parsing error
+        }
+    }
+    return {}; // Return empty object if file doesn't exist
+}
+
+/**
+ * Gets the description for a single file from the folder's info file.
  * @param {string} fileId The ID of the file.
  * @param {string} parentFolderId The ID of the folder containing the file.
  * @return {string} The stored description or an empty string.
  */
 function getFileDescription(fileId, parentFolderId) {
-  const parentFolder = DriveApp.getFolderById(parentFolderId);
-  const fileName = `.${fileId}.description.json`;
-  const files = parentFolder.getFilesByName(fileName);
-  if (files.hasNext()) {
-    try {
-      return JSON.parse(files.next().getBlob().getDataAsString()).description;
-    } catch (e) { console.error(`Error parsing description for ${fileId}: ${e.message}`); }
-  }
-  return "";
+  const infoData = getInfoData(parentFolderId);
+  return infoData[fileId] || "";
 }
 
 /**
- * Saves a description for a file into a corresponding JSON file.
+ * Removes entries from the info file for templates that no longer exist.
+ * @param {string} folderId The ID of the folder to clean up.
+ */
+function pruneInfoFile(folderId) {
+  const folder = DriveApp.getFolderById(folderId);
+  const fileName = ".nik-template-info.json";
+  const infoFiles = folder.getFilesByName(fileName);
+
+  if (!infoFiles.hasNext()) {
+      Logger.log(`No info file to prune in folder ${folderId}`);
+      return; // Nothing to do
+  }
+  
+  const infoFile = infoFiles.next();
+  let infoData;
+  try {
+      infoData = JSON.parse(infoFile.getBlob().getDataAsString());
+  } catch(e) {
+      console.error(`Could not parse info file for pruning: ${e.message}`);
+      return; // Cannot prune a broken file
+  }
+
+  const currentFileIds = new Set();
+  const filesInFolder = folder.getFiles();
+  while(filesInFolder.hasNext()){
+      currentFileIds.add(filesInFolder.next().getId());
+  }
+  
+  let wasModified = false;
+  for (const idInInfoFile in infoData) {
+      if (!currentFileIds.has(idInInfoFile)) {
+          console.log(`Pruning stale description for deleted file ID: ${idInInfoFile}`);
+          delete infoData[idInInfoFile];
+          wasModified = true;
+      }
+  }
+
+  // Only rewrite the file if changes were made
+  if (wasModified) {
+      console.log(`Saving pruned info file in folder ${folderId}`);
+      const content = JSON.stringify(infoData, null, 2);
+      infoFile.setContent(content);
+  }
+}
+
+/**
+ * Saves the description for a single file to the folder's info file.
  * @param {string} fileId The ID of the file.
  * @param {string} parentFolderId The ID of the folder containing the file.
  * @param {string} description The new description text.
  */
 function saveFileDescription(fileId, parentFolderId, description) {
-  const parentFolder = DriveApp.getFolderById(parentFolderId);
-  const fileName = `.${fileId}.description.json`;
-  const files = parentFolder.getFilesByName(fileName);
-  const data = { description: description, lastUpdated: new Date().toISOString() };
-  const content = JSON.stringify(data, null, 2);
+  const folder = DriveApp.getFolderById(parentFolderId);
+  const fileName = ".nik-template-info.json";
+  let infoData = getInfoData(parentFolderId);
 
-  if (files.hasNext()) {
-    files.next().setContent(content);
+  // Update or add the new description
+  infoData[fileId] = description;
+
+  // Save the updated data back to the file
+  const content = JSON.stringify(infoData, null, 2);
+  const infoFiles = folder.getFilesByName(fileName);
+  if (infoFiles.hasNext()) {
+    infoFiles.next().setContent(content);
   } else {
-    parentFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+    folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
   }
+
+  // After saving, also prune any other stale entries
+  pruneInfoFile(parentFolderId);
+}
+
+/**
+ * Creates a new Google Doc in the specified folder.
+ * @param {string} folderId The ID of the target folder.
+ * @return {Document} The newly created Google Doc object.
+ */
+function createNewTemplateInFolder(folderId) {
+  const folder = DriveApp.getFolderById(folderId);
+  const docName = `Untitled Template - ${new Date().toLocaleString()}`;
+  const newDoc = DocumentApp.create(docName);
+  const newDocFile = DriveApp.getFileById(newDoc.getId());
+  
+  newDocFile.moveTo(folder);
+  
+  Logger.log(`Created new doc "${docName}" (${newDoc.getId()}) in folder "${folder.getName()}" (${folderId})`);
+  return newDoc;
 }
 
 /**
