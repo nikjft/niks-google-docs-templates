@@ -13,7 +13,7 @@ function createConfigurationCard() {
 
   section.addWidget(CardService.newTextInput()
     .setFieldName('folderUrl')
-    .setTitle('Google Drive Folder URL or ID')
+    .setTitle('Google Drive™ Folder URL or ID')
     .setHint('Paste the folder URL or just the ID here'));
 
   const saveAction = CardService.newAction().setFunctionName('handleSaveFolderAction');

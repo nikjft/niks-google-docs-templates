@@ -170,10 +170,12 @@ function createNewTemplateInFolder(folderId) {
  * Inserts content from a Google Doc or an image into the active document.
  * @param {string} fileId The ID of the file to insert.
  * @param {string} mimeType The MIME type of the file.
+ * @return {Object} An object indicating if elements were skipped.
  */
 function insertContent(fileId, mimeType) {
   const doc = DocumentApp.getActiveDocument();
   const cursor = doc.getCursor();
+  let wereElementsSkipped = false;
 
   if (!cursor) {
     throw new Error('Cannot insert content. Please place your cursor in the document.');
@@ -181,8 +183,8 @@ function insertContent(fileId, mimeType) {
 
   if (mimeType.includes('image')) {
     const imageBlob = DriveApp.getFileById(fileId).getBlob();
-    cursor.insertInlineImage(imageBlob);
-    return;
+    cursor.insertImage(imageBlob);
+    return { skipped: false };
   }
 
   if (mimeType === MimeType.GOOGLE_DOCS) {
@@ -213,18 +215,17 @@ function insertContent(fileId, mimeType) {
             const sourcePara = originalElement.asParagraph();
             const targetPara = container.insertParagraph(insertionIndex, "");
             
-            // Set attributes on the new paragraph first.
             targetPara.setAttributes(sourcePara.getAttributes());
             
-            // Append children one by one, using the correct methods.
             for (let j = 0; j < sourcePara.getNumChildren(); j++) {
                 const child = sourcePara.getChild(j);
-                const childType = child.getType();
+                const childCopy = child.copy();
+                const childType = childCopy.getType();
 
                 if (childType === DocumentApp.ElementType.TEXT) {
-                    targetPara.appendText(child.asText().copy());
+                    targetPara.appendText(childCopy.asText());
                 } else if (childType === DocumentApp.ElementType.INLINE_IMAGE) {
-                    targetPara.appendInlineImage(child.asInlineImage().copy());
+                    targetPara.appendInlineImage(childCopy.asInlineImage());
                 }
             }
 
@@ -240,8 +241,12 @@ function insertContent(fileId, mimeType) {
                 }
             } else {
                 console.warn(`Skipping an unsupported element type: ${type}`);
+                wereElementsSkipped = true;
             }
         }
     }
+    return { skipped: wereElementsSkipped };
   }
+  
+  return { skipped: false };
 }

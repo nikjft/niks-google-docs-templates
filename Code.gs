@@ -65,7 +65,7 @@ function handleMenuReset() {
     // Clear the script cache
     CacheService.getScriptCache().removeAll(['contents_root']); // Attempt to clear root cache
     
-    const message = 'The add-on has been reset. The next time you open it, you will be asked to configure a root folder.\n\nTo fully remove all permissions, please visit your Google Account settings.';
+    const message = 'The add-on has been reset. The next time you open it, you will be asked to configure a root folder.\n\nTo fully remove all permissions, please visit your Google™ Account settings.';
     DocumentApp.getUi().alert('Reset Complete', message, DocumentApp.getUi().ButtonSet.OK);
   } catch(e) {
     DocumentApp.getUi().alert(`An error occurred during reset: ${e.message}`);

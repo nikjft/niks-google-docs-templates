@@ -1,14 +1,9 @@
 function handleSaveFolderAction(e) {
   const folderUrl = e.formInput.folderUrl.trim();
-  if (!folderUrl) {
-    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText("Please provide a folder URL or ID.")).build();
-  }
-
-  const match = folderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
-  const folderId = (match && match[1]) ? match[1] : folderUrl;
+  const folderId = folderUrl.includes('folders/') ? folderUrl.substring(folderUrl.lastIndexOf('folders/') + 8).split('/')[0] : folderUrl;
   
   try {
-    DriveApp.getFolderById(folderId); // Validate the ID
+    DriveApp.getFolderById(folderId);
     PropertiesService.getUserProperties().setProperty('rootFolderId', folderId);
     const newCard = createBrowserCard(folderId, [], {});
     return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
@@ -26,8 +21,9 @@ function handleResetAction() {
 
 function handleNavigation(e) {
   const folderId = e.parameters.folderId;
-  const path = e.parameters.path ? JSON.parse(e.parameters.path) : [];
-  const newCard = createBrowserCard(folderId, path, {});
+  const path = JSON.parse(e.parameters.path);
+  const selection = JSON.parse(e.parameters.selection);
+  const newCard = createBrowserCard(folderId, path, selection);
   return CardService.newActionResponseBuilder().setNavigation(CardService.newNavigation().updateCard(newCard)).build();
 }
 
@@ -60,13 +56,14 @@ function handleCreateNewTemplate(e) {
   try {
     const params = e.parameters;
     const folderId = params.folderId;
+    
     const newDoc = createNewTemplateInFolder(folderId);
     
     const cacheKey = `contents_${folderId}`;
     CacheService.getScriptCache().remove(cacheKey);
     
     const path = JSON.parse(params.path);
-    const newCard = createBrowserCard(folderId, path, {});
+    const newCard = createBrowserCard(folderId, path, {}); 
     
     const navigation = CardService.newNavigation().updateCard(newCard);
     const openLink = CardService.newOpenLink().setUrl(newDoc.getUrl());
@@ -77,16 +74,21 @@ function handleCreateNewTemplate(e) {
         .setNavigation(navigation)
         .build();
   } catch (err) {
+    const errorCard = createErrorCard(err, "Failed to create new template.");
     return CardService.newActionResponseBuilder()
-        .setNavigation(CardService.newNavigation().updateCard(createErrorCard(err, "Failed to create new template.")))
+        .setNavigation(CardService.newNavigation().updateCard(errorCard))
         .build();
   }
 }
 
 function handleInsertAction(e) {
   try {
-    insertContent(e.parameters.fileId, e.parameters.mimeType);
-    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText("Content inserted.")).build();
+    const result = insertContent(e.parameters.fileId, e.parameters.mimeType);
+    let message = "Content inserted.";
+    if (result && result.skipped) {
+        message = "Content inserted, but some unsupported elements were skipped.";
+    }
+    return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText(message)).build();
   } catch (err) {
     return CardService.newActionResponseBuilder().setNotification(CardService.newNotification().setText(`Insertion Failed: ${err.message}`)).build();
   }
